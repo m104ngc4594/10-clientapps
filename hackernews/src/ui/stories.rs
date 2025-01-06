@@ -1,7 +1,7 @@
 use crate::{
     api::{get_story_comments, get_top_stories},
     ui::CommentsState,
-    StoryData, StoryItem,
+    StoryItem,
 };
 use dioxus::prelude::*;
 use dioxus_logger::tracing::info;
@@ -34,9 +34,7 @@ pub fn Stories() -> Element {
 
 #[component]
 pub fn StoryItem(story: StoryItem) -> Element {
-    let comments_state = use_context::<Signal<CommentsState>>();
-    // cache of the already loaded comments: Option<StoryData>
-    let full_story = use_signal(|| None);
+    let mut comments_state = use_context::<Signal<CommentsState>>();
     rsx! {
         li { class: "py-5 border-b px-3 transition hover:bg-indigo-100",
             a { href: "#", class: "flex justify-between items-center",
@@ -50,30 +48,17 @@ pub fn StoryItem(story: StoryItem) -> Element {
                     prevent_default: "onclick",
                     onclick: move |event| {
                         info!("Clicked on story: {} with event: {:#?}", story.title, event);
-                        load_comments(comments_state, full_story, story.clone())
+                        let story = story.clone();
+                        async move {
+                            *comments_state.write() = CommentsState::Loading;
+                            if let Ok(story_data) = get_story_comments(story).await {
+                                *comments_state.write() = CommentsState::Loaded(Box::new(story_data));
+                            }
+                        }
                     },
                     "{story.kids.len()} comments"
                 }
             }
         }
-    }
-}
-
-async fn load_comments(
-    mut comments_state: Signal<CommentsState>,
-    mut full_story: Signal<Option<StoryData>>,
-    story: StoryItem,
-) {
-    // if the comments are already loaded, just  change comments_state and return
-    if let Some(story_data) = full_story.as_ref() {
-        *comments_state.write() = CommentsState::Loaded(Box::new(story_data.clone()));
-        return;
-    }
-
-    // if no, set comments_state to loading and fetch the comments
-    *comments_state.write() = CommentsState::Loading;
-    if let Ok(story_data) = get_story_comments(story).await {
-        *comments_state.write() = CommentsState::Loaded(Box::new(story_data.clone()));
-        *full_story.write() = Some(story_data);
     }
 }
